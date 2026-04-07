@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Local Transport Management System</title>
+
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      background: #eef2f7;
+    }
+
+    .navbar {
+      background: linear-gradient(135deg, #1f2a44, #3a4f7a);
+      color: white;
+      padding: 18px;
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .logout {
+      float: right;
+      background: red;
+      border: none;
+      padding: 6px 12px;
+      color: white;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 30px auto;
+    }
+
+    .section {
+      background: white;
+      padding: 22px;
+      margin-bottom: 25px;
+      border-radius: 14px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 8px;
+      border: 1px solid #dcdfe6;
+    }
+
+    button {
+      padding: 10px 16px;
+      background: #4e54c8;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 2px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 12px;
+      text-align: center;
+    }
+
+    th {
+      background: #4e54c8;
+      color: white;
+    }
+
+    td {
+      border-bottom: 1px solid #eee;
+    }
+
+    .dashboard {
+      display: flex;
+      gap: 15px;
+    }
+
+    .box {
+      flex: 1;
+      background: #eef1ff;
+      padding: 18px;
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .ticket {
+      background: #f4f7ff;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 10px;
+      border-left: 5px solid #4e54c8;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="navbar">
+  🚍 Local Transport Management System
+  <button class="logout" onclick="logout()">Logout</button>
+</div>
+
+<div class="container">
+
+<div class="section">
+<h3>Dashboard</h3>
+<div id="dashboard" class="dashboard"></div>
+</div>
+
+<div class="section">
+<h3>Add Bus Route</h3>
+<input id="routeId" placeholder="Bus Number">
+<input id="source" placeholder="Source">
+<input id="destination" placeholder="Destination">
+<input id="stops" placeholder="Stops">
+<input id="fare" placeholder="Fare ₹">
+<input id="schedule" placeholder="Today / Tomorrow">
+<button onclick="saveRoute()">Add Route</button>
+</div>
+
+<div class="section">
+<h3>Search</h3>
+<input id="search" onkeyup="searchRoutes()" placeholder="Search routes">
+</div>
+
+<div class="section">
+<h3>Routes</h3>
+<table>
+<thead>
+<tr>
+<th>Bus</th>
+<th>Source</th>
+<th>Destination</th>
+<th>Fare</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody id="routeTable"></tbody>
+</table>
+</div>
+
+<div class="section">
+<h3>Add Passenger</h3>
+<input id="studentName" placeholder="Name">
+<input id="rollNo" placeholder="ID">
+<input id="studentRoute" placeholder="Bus">
+<button onclick="addStudent()">Add Passenger</button>
+</div>
+
+<div class="section">
+<h3>Passengers</h3>
+<ul id="studentList"></ul>
+</div>
+
+<div class="section">
+<h3>Generate Ticket</h3>
+<input id="passStudent" placeholder="Name">
+<input id="passRoute" placeholder="Bus">
+<input id="validity" placeholder="Validity">
+<button onclick="generatePass()">Generate</button>
+</div>
+
+<div class="section">
+<h3>Tickets</h3>
+<div id="passList"></div>
+</div>
+
+</div>
+
+<script>
+/* LOGIN PROTECTION */
+if (!localStorage.getItem("loggedIn")) {
+  window.location.href = "login.html";
+}
+
+function logout() {
+  localStorage.removeItem("loggedIn");
+  window.location.href = "login.html";
+}
+
+const API = "http://localhost:5000";
+let routes = [];
+
+async function loadRoutes() {
+  const res = await fetch(API + "/routes");
+  routes = await res.json();
+  displayRoutes();
+}
+
+function displayRoutes(data = routes) {
+  if (data.length === 0) {
+    routeTable.innerHTML = `<tr><td colspan="6">No routes found 😢</td></tr>`;
+    return;
+  }
+
+  routeTable.innerHTML = data.map(r => {
+
+    let status = "🔴 Not Available";
+    if (r.schedule?.toLowerCase().includes("today")) {
+      status = "🟢 Available";
+    } else if (r.schedule?.toLowerCase().includes("tomorrow")) {
+      status = "🟡 Upcoming";
+    }
+
+    return `
+      <tr>
+        <td>${r.routeId}</td>
+        <td>${r.source}</td>
+        <td>${r.destination}</td>
+        <td>₹${r.fare || 0}</td>
+        <td>${status}</td>
+        <td>
+          <button onclick="editRoute(${r.id})">Edit</button>
+          <button onclick="deleteRoute(${r.id})">Delete</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  updateDashboard();
+}
+
+function editRoute(id) {
+  let r = routes.find(x => x.id == id);
+
+  routeId.value = r.routeId;
+  source.value = r.source;
+  destination.value = r.destination;
+  stops.value = r.stops;
+  fare.value = r.fare;
+  schedule.value = r.schedule;
+
+  deleteRoute(id);
+}
+
+async function saveRoute() {
+  await fetch(API + "/routes", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      routeId: routeId.value,
+      source: source.value,
+      destination: destination.value,
+      stops: stops.value,
+      fare: fare.value,
+      schedule: schedule.value
+    })
+  });
+  loadRoutes();
+}
+
+function searchRoutes() {
+  let key = search.value.toLowerCase();
+
+  let filtered = routes.filter(r =>
+    r.routeId.toLowerCase().includes(key) ||
+    r.source.toLowerCase().includes(key) ||
+    r.destination.toLowerCase().includes(key)
+  );
+
+  if (filtered.length === 0) {
+    routeTable.innerHTML = `<tr><td colspan="6">No route found 😢</td></tr>`;
+  } else {
+    displayRoutes(filtered);
+  }
+}
+
+async function deleteRoute(id) {
+  await fetch(`${API}/routes/${id}`, {method:"DELETE"});
+  loadRoutes();
+}
+
+async function addStudent() {
+  await fetch(API + "/students", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      name: studentName.value,
+      roll: rollNo.value,
+      route: studentRoute.value
+    })
+  });
+  loadStudents();
+}
+
+async function loadStudents() {
+  const res = await fetch(API + "/students");
+  const data = await res.json();
+  studentList.innerHTML = data.map(s => `<li>${s.name} - Bus ${s.route}</li>`).join("");
+}
+
+async function generatePass() {
+  await fetch(API + "/passes", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      student: passStudent.value,
+      route: passRoute.value,
+      validity: validity.value
+    })
+  });
+  loadPasses();
+}
+
+async function loadPasses() {
+  const res = await fetch(API + "/passes");
+  const data = await res.json();
+
+  passList.innerHTML = data.map(p => `
+    <div class="ticket">
+      🎫 ${p.student} | Bus ${p.route} | ${p.validity}
+    </div>
+  `).join("");
+}
+
+async function updateDashboard() {
+  const s = await fetch(API+"/students").then(r=>r.json());
+  const p = await fetch(API+"/passes").then(r=>r.json());
+
+  dashboard.innerHTML = `
+    <div class="box">🚌 ${routes.length} Routes</div>
+    <div class="box">👥 ${s.length} Passengers</div>
+    <div class="box">🎫 ${p.length} Tickets</div>
+  `;
+}
+
+window.onload = () => {
+  loadRoutes();
+  loadStudents();
+  loadPasses();
+};
+</script>
+
+</body>
+</html>
